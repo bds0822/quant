@@ -3,6 +3,7 @@ import abc
 import pandas as pd
 import pandas_datareader as pdr
 import yfinance as yf
+import yfinance.data
 from tqdm import tqdm
 
 from core.ticker import *
@@ -16,6 +17,10 @@ class DataReader(abc.ABC):
 
 
 class YahooDataReader(DataReader):
+
+    yf.data.TickerData.user_agent_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
+    }
 
     @staticmethod
     def read(tickers: list[Ticker], start=None, end=None,
