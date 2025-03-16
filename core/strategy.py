@@ -16,7 +16,7 @@ class Strategy(abc.ABC):
 
     def __init__(self, name, tickers):
         self.name = name
-        self.tickers = tickers
+        self.tickers = sorted(tickers)
 
     def __str__(self):
         return self.name
@@ -122,7 +122,7 @@ class Strategy(abc.ABC):
         :return: Daily profit.
         """
         # sort by tickers
-        tickers_trading = sorted(asset_weights.columns)
+        tickers_trading = asset_weights.columns
         asset_weights = asset_weights.loc[:, tickers_trading]
 
         trading_day = asset_weights.index
@@ -184,16 +184,16 @@ class BAA(Strategy):
 
         tickers = list(set(tickers_canary + tickers_risk + tickers_safe))
         super().__init__(name, tickers)
-        self.tickers_canary = tickers_canary
-        self.tickers_risk = tickers_risk
-        self.tickers_safe = tickers_safe
-        self.tickers_trading = list(set(self.tickers_risk + self.tickers_safe))
+        self.tickers_canary = sorted(tickers_canary)
+        self.tickers_risk = sorted(tickers_risk)
+        self.tickers_safe = sorted(tickers_safe)
+        self.tickers_trading = sorted(list(set(self.tickers_risk + self.tickers_safe)))
         self.n_risk = n_risk
         self.n_safe = n_safe
 
     def calculate_asset_weights(self, data: pd.DataFrame, trading_days: pd.Series, **kwargs) -> pd.DataFrame:
         # data for scoring - data of the day before trading days
-        data_scoring = data.shift(periods=1).loc[trading_days]
+        data_scoring = data.apply(floor, decimal=4).shift(periods=1).loc[trading_days]
         # data for scoring canary assets
         data_scoring_canary = data_scoring[self.tickers_canary]
         # data for scoring risk and safe assets
@@ -258,7 +258,7 @@ class HAA(BAA):
 
     def calculate_asset_weights(self, data: pd.DataFrame, trading_days: pd.Series, **kwargs) -> pd.DataFrame:
         # data for scoring - data of the day before trading days
-        data_scoring = data.shift(periods=1).loc[trading_days]
+        data_scoring = data.apply(floor, decimal=4).shift(periods=1).loc[trading_days]
         # data for scoring canary assets
         data_scoring_canary = data_scoring[self.tickers_canary]
         # data for scoring risk and safe assets
@@ -319,17 +319,33 @@ class Alternatives(Strategy):
                  name: str,
                  strategy: Strategy,
                  alternatives: dict[Ticker, Ticker] = {}):
-        tickers = list(set(strategy.tickers + list(alternatives.values())))
-        super().__init__(name, tickers)
+        super().__init__(name, strategy.tickers)
         self.strategy = strategy
         self.alternatives = alternatives
 
+    def asset_weights_from_tickers(self, tickers: list[Ticker],
+                                   trading_day="end", trading_price="Close", start=None, end=None, in_krw=True,
+                                   **kwargs):
+        data, asset_weights = self.strategy.asset_weights_from_tickers(tickers,
+                                                                       trading_day,
+                                                                       trading_price,
+                                                                       start,
+                                                                       end,
+                                                                       in_krw,
+                                                                       **kwargs)
+        # switch trading assets to alternatives
+        data.rename(columns=self.alternatives, inplace=True)
+        asset_weights.rename(columns=self.alternatives, inplace=True)
+        return data, asset_weights
+
     def calculate_asset_weights(self, data: pd.DataFrame, trading_days: pd.Series, **kwargs) -> pd.DataFrame:
         # calculate asset weights by base strategy
-        asset_weights = self.strategy.calculate_asset_weights(data, trading_days, **kwargs)
-        # switch trading assets to alternatives
-        asset_weights.rename(columns=self.alternatives, inplace=True)
-        return asset_weights
+        return self.strategy.calculate_asset_weights(data, trading_days, **kwargs)
+
+
+def floor(x, decimal=4):
+    pos = 10**decimal
+    return np.floor(x * pos) / pos
 
 
 if __name__ == '__main__':
