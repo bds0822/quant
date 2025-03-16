@@ -4,7 +4,7 @@ from typing import List, Tuple
 import pandas as pd
 import quantstats as qs
 
-from core.strategy import Strategy, SAA, BAA, Alternatives
+from core.strategy import *
 from core.ticker import *
 
 
@@ -103,17 +103,41 @@ if __name__ == "__main__":
                    tickers_canary, tickers_risk_g4, [TLT_H, IEF_H, AGG, TIP, LQD, BIL, DBC],
                    n_risk=n_risk_g4, n_safe=n_safe)
     k_baa = BAA("K_BAA",
-                tickers_canary, [QQQ], [TLT_H, IEF, LQD, BIL, DBC_H],  # need K-TIP and K-IEF_H for safe assets
+                tickers_canary, [QQQ], [TLT_H, IEF, TIP, LQD, BIL, DBC_H],  # need K-IEF_H and K-DBC
                 n_risk=n_risk_g4, n_safe=n_safe)
     k_baa_psa = Alternatives("K_BAA_PSA",
                              k_baa,
                              alternatives={
-                                 QQQ: TIGER_NASDAQ_100,
-                                 TLT_H: KBSTAR_US_BOND_F_H,
-                                 IEF: TIGER_US_NOTE_F,
-                                 LQD: ARIRANG_LQD,
-                                 BIL: TIGER_US_BIL,
+                                 QQQ: TIGER_NASDAQ_100,     # KODEX_NASDAQ_100
+                                 TLT_H: RISE_US_BOND_F_H,   # ACE_US_BOND_H
+                                 IEF: TIGER_US_NOTE_F,      # KODEX_US_NOTE_F
+                                 TIP: TIP,                  # KODEX_TIP
+                                 LQD: PLUS_LQD,             # KODEX_LQD
+                                 BIL: TIGER_US_BIL,         # KODEX_US_SOFR_BIL
                                  DBC_H: TIGER_OIL_F_H,
+                             })
+
+    # haa = HAA("HAA",
+    #           [TIP], [SPY, IWM, EFA, EEM, VNQ, DBC, TLT, IEF], [IEF, BIL],
+    #           n_risk=4, n_safe=1)
+    haa = HAA("HAA",
+              [TIP, SPY], [SPY, QQQ, IWM, EFA, EEM, IYR, DBC, TLT, IEF, GLD], [IEF, BIL, LQD],
+              n_risk=4, n_safe=1)
+    k_haa = HAA("K_HAA",
+                [TIP, SPY], [SPY, QQQ, IYR_H, DBC_H, TLT_H, IEF, GLD], [IEF, BIL, LQD],
+                n_risk=4, n_safe=1)
+    k_haa_psa = Alternatives("K_HAA_PSA",
+                             k_haa,
+                             alternatives={
+                                 SPY: TIGER_SNP_500,        # KODEX_SNP_500
+                                 QQQ: TIGER_NASDAQ_100,     # KODEX_NASDAQ_100
+                                 IYR_H: KODEX_IYR_H,
+                                 DBC_H: TIGER_OIL_F_H,
+                                 TLT_H: RISE_US_BOND_F_H,   # ACE_US_BOND_H
+                                 GLD: ACE_GLD,
+                                 IEF: TIGER_US_NOTE_F,      # KODEX_US_NOTE_F
+                                 BIL: TIGER_US_BIL,         # KODEX_US_SOFR_BIL
+                                 LQD: PLUS_LQD,             # KODEX_LQD
                              })
 
     all_weather = SAA("ALL_WEATHER",
@@ -123,7 +147,7 @@ if __name__ == "__main__":
                         [SPY, TLT_H, IEF, GLD, DBC_H],    # need K-TLT and K-DBC
                         [30, 40, 15, 7.5, 7.5])
     k_all_weather_psa = SAA("K_ALL_WEATHER_PSA",
-                            [TIGER_SNP_500, KBSTAR_US_BOND_F_H, TIGER_US_NOTE_F, ACE_GLD, TIGER_OIL_F_H],
+                            [TIGER_SNP_500, RISE_US_BOND_F_H, TIGER_US_NOTE_F, ACE_GLD, TIGER_OIL_F_H],
                             [30, 40, 15, 7.5, 7.5])
     # richgo1 = SAA("RICHGO_1",
     #               [SPY, KODEX_200, IEF, TLT_H, LQD, KOSEF_KR_NOTE, GLD],
@@ -141,7 +165,7 @@ if __name__ == "__main__":
                  [SPY, KODEX_200, IEF, TLT_H, KOSEF_KR_NOTE, GLD],
                  [25, 23, 12, 10, 10, 20])
     richgo_irp = SAA("RICHGO_IRP",
-                     [TIGER_SNP_500, KODEX_200, KODEX_200_US_NOTE, KBSTAR_US_BOND_F_H, KOSEF_KR_NOTE, ACE_GLD],
+                     [TIGER_SNP_500, KODEX_200, KODEX_200_US_NOTE, RISE_US_BOND_F_H, KOSEF_KR_NOTE, ACE_GLD],
                      [25, 15, 20, 10, 10, 20])
 
     strategies = [
@@ -153,6 +177,9 @@ if __name__ == "__main__":
         k_baa_g4,
         k_baa,
         k_baa_psa,
+        haa,
+        k_haa,
+        k_haa_psa,
         all_weather,
         k_all_weather,
         k_all_weather_psa,
@@ -169,26 +196,28 @@ if __name__ == "__main__":
     targets = [
         (qqq, spy),
         (schd, spy),
+
         (baa_g4, spy),
         (baa_g12, spy),
         (baa_g4, baa_g12),
-        (baa_g12, baa_g4),
-        (k_baa_g4, spy),
-        (k_baa_g4, baa_g4),
-        (k_baa, spy),
         (k_baa, baa_g4),
-        (k_baa, k_baa_g4),
+        (k_baa_psa, spy),
+        (k_baa_psa, k_baa),
+
+        (haa, baa_g4),
+        (k_haa, haa),
+        (k_haa, k_baa),
+        (k_haa_psa, k_haa),
+        (k_haa_psa, k_baa_psa),
+
         (all_weather, spy),
         (k_all_weather, all_weather),
-        (k_all_weather, spy),
         (k_all_weather, k_baa),
         (k_all_weather_psa, k_all_weather),
-        (richgo, spy),
+
         (richgo, k_baa),
         (richgo, k_all_weather),
         (richgo_irp, richgo),
-        (k_baa_psa, spy),
-        (k_baa_psa, k_baa),
     ]
     file_tag = "KRW" if in_krw else "USD"
     quantstats_reports(result, targets, file_tag=file_tag)

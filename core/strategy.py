@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from core.datareader import ReadData
+from core.score import *
 from core.ticker import Ticker, KRW, BIL
 
 
@@ -199,48 +200,111 @@ class BAA(Strategy):
         data_scoring_trading = data_scoring[self.tickers_trading]
 
         # 13612W score for canary assets
-        score_13612W = self._get_score_13612W(data_scoring_canary)
-        score_SMA12 = self._get_score_SMA12(data_scoring_trading)
+        canary_score = score_13612W(data_scoring_canary)
+        momentum_score = score_SMA12(data_scoring_trading)
 
         # buy assets and calculate profit
-        asset_weights = self._get_asset_weights(score_SMA12, score_13612W)
+        asset_weights = self._get_asset_weights(momentum_score, canary_score)
         return asset_weights
 
-    def _get_score_13612W(self, data: pd.DataFrame) -> pd.DataFrame:
-        m1 = data.pct_change(periods=1)
-        m3 = data.pct_change(periods=3)
-        m6 = data.pct_change(periods=6)
-        m12 = data.pct_change(periods=12)
-        score = (12 * m1 + 4 * m3 + 2 * m6 + 1 * m12).dropna(axis=0)
-        return score
+    def _get_asset_weights(self, momentum_score: pd.DataFrame, canary_score: pd.DataFrame) -> pd.DataFrame:
+        run_to_safety = (canary_score < 0).any(axis=1)
 
-    def _get_score_SMA12(self, data: pd.DataFrame) -> pd.DataFrame:
-        score = (data / data.rolling(window=13).mean() - 1).dropna(axis=0)
-        return score
-
-    def _get_asset_weights(self, score_SMA12: pd.DataFrame, score_13612W: pd.DataFrame) -> pd.DataFrame:
-        run_to_safety = (score_13612W < 0).any(axis=1)
-
-        asset_risk_score_threshold = score_SMA12[self.tickers_risk]\
+        asset_risk_score_threshold = momentum_score[self.tickers_risk] \
             .apply(lambda x: x.sort_values(ascending=False)[self.n_risk - 1], axis=1)
-        asset_safe_score_threshold = score_SMA12[self.tickers_safe]\
+        asset_safe_score_threshold = momentum_score[self.tickers_safe] \
             .apply(lambda x: x.sort_values(ascending=False)[self.n_safe - 1], axis=1)
 
-        asset_risk_top_n = score_SMA12[self.tickers_risk]\
+        asset_risk_top_n = momentum_score[self.tickers_risk] \
             .apply(lambda x: x >= asset_risk_score_threshold).applymap(int)
-        asset_safe_top_n = score_SMA12[self.tickers_safe]\
+        asset_safe_top_n = momentum_score[self.tickers_safe] \
             .apply(lambda x: x >= asset_safe_score_threshold).applymap(int)
 
-        # if a safe asset was worse than BIL, replace it by BIL.
-        asset_safe_worse_than_bil = score_SMA12[self.tickers_safe]\
-            .apply(lambda x: x < x[BIL], axis=1).applymap(int) & asset_safe_top_n
-        asset_safe_top_n -= asset_safe_worse_than_bil
-        asset_safe_top_n[BIL] += asset_safe_worse_than_bil.sum(axis=1)
-
-        # combine all together
+        # calculate weights
         asset_risk_weight = asset_risk_top_n.apply(lambda x: x * (1 - run_to_safety) / self.n_risk)
         asset_safe_weight = asset_safe_top_n.apply(lambda x: x * run_to_safety / self.n_safe)
-        asset_weights = pd.DataFrame(data=0, index=score_SMA12.index, columns=self.tickers_trading)
+
+        # if a safe asset was worse than BIL, allocate that portion of the asset to BIL.
+        asset_safe_worse_than_bil = momentum_score[self.tickers_safe].apply(lambda x: x < x[BIL], axis=1).applymap(int)
+        asset_safe_weight_worse_than_bil = asset_safe_weight * asset_safe_worse_than_bil
+        asset_safe_weight -= asset_safe_weight_worse_than_bil
+        asset_safe_weight[BIL] += asset_safe_weight_worse_than_bil.sum(axis=1)
+
+        asset_weights = pd.DataFrame(data=0, index=momentum_score.index, columns=self.tickers_trading)
+        asset_weights[self.tickers_risk] += asset_risk_weight
+        asset_weights[self.tickers_safe] += asset_safe_weight
+        return asset_weights
+
+
+class HAA(BAA):
+    """
+    Hybrid Asset Allocation.
+    """
+
+    def __init__(self,
+                 name: str,
+                 tickers_canary: list[Ticker],
+                 tickers_risk: list[Ticker],
+                 tickers_safe: list[Ticker],
+                 n_risk=4,
+                 n_safe=1):
+
+        super().__init__(name,
+                         tickers_canary,
+                         tickers_risk,
+                         tickers_safe,
+                         n_risk,
+                         n_safe)
+
+    def calculate_asset_weights(self, data: pd.DataFrame, trading_days: pd.Series, **kwargs) -> pd.DataFrame:
+        # data for scoring - data of the day before trading days
+        data_scoring = data.shift(periods=1).loc[trading_days]
+        # data for scoring canary assets
+        data_scoring_canary = data_scoring[self.tickers_canary]
+        # data for scoring risk and safe assets
+        data_scoring_trading = data_scoring[self.tickers_trading]
+
+        # 13612W score for canary assets
+        canary_score = score_13612U(data_scoring_canary)
+        momentum_score = score_13612U(data_scoring_trading)
+
+        # buy assets and calculate profit
+        asset_weights = self._get_asset_weights(momentum_score, canary_score)
+        return asset_weights
+
+    def _get_asset_weights(self, momentum_score: pd.DataFrame, canary_score: pd.DataFrame) -> pd.DataFrame:
+        run_to_safety = (canary_score < 0).any(axis=1)
+
+        asset_risk_score_threshold = momentum_score[self.tickers_risk] \
+            .apply(lambda x: x.sort_values(ascending=False)[self.n_risk - 1], axis=1)
+        asset_safe_score_threshold = momentum_score[self.tickers_safe] \
+            .apply(lambda x: x.sort_values(ascending=False)[self.n_safe - 1], axis=1)
+
+        asset_risk_top_n = momentum_score[self.tickers_risk] \
+            .apply(lambda x: x >= asset_risk_score_threshold).applymap(int)
+        asset_safe_top_n = momentum_score[self.tickers_safe] \
+            .apply(lambda x: x >= asset_safe_score_threshold).applymap(int)
+
+        # calculate weights
+        asset_risk_weight = asset_risk_top_n.apply(lambda x: x * (1 - run_to_safety) / self.n_risk)
+        asset_safe_weight = asset_safe_top_n.apply(lambda x: x * run_to_safety / self.n_safe)
+
+        # if a risk asset has a negative momentum, allocate that portion of the asset to safe assets.
+        asset_risk_neg_mtm = momentum_score[self.tickers_risk].apply(lambda x: x < 0, axis=1).applymap(int)
+        asset_risk_weight_neg_mtm = asset_risk_weight * asset_risk_neg_mtm
+        asset_risk_weight -= asset_risk_weight_neg_mtm
+
+        asset_risk_weight_neg_mtm_reallocated = asset_safe_top_n \
+            .apply(lambda x: x * np.asarray(asset_risk_weight_neg_mtm.sum(axis=1))) / self.n_safe
+        asset_safe_weight += asset_risk_weight_neg_mtm_reallocated
+
+        # if a safe asset was worse than BIL, allocate that portion of the asset to BIL.
+        asset_safe_worse_than_bil = momentum_score[self.tickers_safe].apply(lambda x: x < x[BIL], axis=1).applymap(int)
+        asset_safe_weight_worse_than_bil = asset_safe_weight * asset_safe_worse_than_bil
+        asset_safe_weight -= asset_safe_weight_worse_than_bil
+        asset_safe_weight[BIL] += asset_safe_weight_worse_than_bil.sum(axis=1)
+
+        asset_weights = pd.DataFrame(data=0, index=momentum_score.index, columns=self.tickers_trading)
         asset_weights[self.tickers_risk] += asset_risk_weight
         asset_weights[self.tickers_safe] += asset_safe_weight
         return asset_weights
