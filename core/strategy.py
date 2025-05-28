@@ -121,10 +121,7 @@ class Strategy(abc.ABC):
         :param kwargs:
         :return: Daily profit.
         """
-        # sort by tickers
         tickers_trading = asset_weights.columns
-        asset_weights = asset_weights.loc[:, tickers_trading]
-
         trading_day = asset_weights.index
         start = trading_day[0]
         data_trading = data.loc[start:, tickers_trading]
@@ -142,8 +139,7 @@ class Strategy(abc.ABC):
             .apply(lambda x: x/x.sum(), axis=1)     # normalize
 
         total_return = (1 + (asset_weights_daily.shift(1) * change).sum(axis=1)).cumprod()
-        profit = pd.DataFrame()
-        profit[tickers_trading] = asset_weights_daily.apply(lambda x: x * total_return)
+        profit = asset_weights_daily.apply(lambda x: x * total_return)
         profit["total_return"] = total_return
         profit["is_trading_day"] = profit.apply(lambda x: x.name in asset_weights.index, axis=1)
         return profit
@@ -179,6 +175,7 @@ class BAA(Strategy):
                  tickers_canary: list[Ticker],
                  tickers_risk: list[Ticker],
                  tickers_safe: list[Ticker],
+                 ticker_bill=BIL,
                  n_risk=1,
                  n_safe=3):
 
@@ -188,6 +185,7 @@ class BAA(Strategy):
         self.tickers_risk = sorted(tickers_risk)
         self.tickers_safe = sorted(tickers_safe)
         self.tickers_trading = sorted(list(set(self.tickers_risk + self.tickers_safe)))
+        self.ticker_bil = ticker_bill
         self.n_risk = n_risk
         self.n_safe = n_safe
 
@@ -225,10 +223,10 @@ class BAA(Strategy):
         asset_safe_weight = asset_safe_top_n.apply(lambda x: x * run_to_safety / self.n_safe)
 
         # if a safe asset was worse than BIL, allocate that portion of the asset to BIL.
-        asset_safe_worse_than_bil = momentum_score[self.tickers_safe].apply(lambda x: x < x[BIL], axis=1).applymap(int)
+        asset_safe_worse_than_bil = momentum_score[self.tickers_safe].apply(lambda x: x < x[self.ticker_bil], axis=1).applymap(int)
         asset_safe_weight_worse_than_bil = asset_safe_weight * asset_safe_worse_than_bil
         asset_safe_weight -= asset_safe_weight_worse_than_bil
-        asset_safe_weight[BIL] += asset_safe_weight_worse_than_bil.sum(axis=1)
+        asset_safe_weight[self.ticker_bil] += asset_safe_weight_worse_than_bil.sum(axis=1)
 
         asset_weights = pd.DataFrame(data=0, index=momentum_score.index, columns=self.tickers_trading)
         asset_weights[self.tickers_risk] += asset_risk_weight
@@ -246,6 +244,7 @@ class HAA(BAA):
                  tickers_canary: list[Ticker],
                  tickers_risk: list[Ticker],
                  tickers_safe: list[Ticker],
+                 ticker_bil=BIL,
                  n_risk=4,
                  n_safe=1):
 
@@ -253,6 +252,7 @@ class HAA(BAA):
                          tickers_canary,
                          tickers_risk,
                          tickers_safe,
+                         ticker_bil,
                          n_risk,
                          n_safe)
 
@@ -299,10 +299,10 @@ class HAA(BAA):
         asset_safe_weight += asset_risk_weight_neg_mtm_reallocated
 
         # if a safe asset was worse than BIL, allocate that portion of the asset to BIL.
-        asset_safe_worse_than_bil = momentum_score[self.tickers_safe].apply(lambda x: x < x[BIL], axis=1).applymap(int)
+        asset_safe_worse_than_bil = momentum_score[self.tickers_safe].apply(lambda x: x < x[self.ticker_bil], axis=1).applymap(int)
         asset_safe_weight_worse_than_bil = asset_safe_weight * asset_safe_worse_than_bil
         asset_safe_weight -= asset_safe_weight_worse_than_bil
-        asset_safe_weight[BIL] += asset_safe_weight_worse_than_bil.sum(axis=1)
+        asset_safe_weight[self.ticker_bil] += asset_safe_weight_worse_than_bil.sum(axis=1)
 
         asset_weights = pd.DataFrame(data=0, index=momentum_score.index, columns=self.tickers_trading)
         asset_weights[self.tickers_risk] += asset_risk_weight
@@ -323,20 +323,12 @@ class Alternatives(Strategy):
         self.strategy = strategy
         self.alternatives = alternatives
 
-    def asset_weights_from_tickers(self, tickers: list[Ticker],
-                                   trading_day="end", trading_price="Close", start=None, end=None, in_krw=True,
-                                   **kwargs):
-        data, asset_weights = self.strategy.asset_weights_from_tickers(tickers,
-                                                                       trading_day,
-                                                                       trading_price,
-                                                                       start,
-                                                                       end,
-                                                                       in_krw,
-                                                                       **kwargs)
+    def analyze(self, trading_day="end", trading_price="Close", start=None, end=None, in_krw=True,
+                **kwargs) -> pd.DataFrame:
+        profit = self.strategy.analyze(trading_day, trading_price, start, end, in_krw, **kwargs)
         # switch trading assets to alternatives
-        data.rename(columns=self.alternatives, inplace=True)
-        asset_weights.rename(columns=self.alternatives, inplace=True)
-        return data, asset_weights
+        profit.rename(columns=self.alternatives, inplace=True)
+        return profit
 
     def calculate_asset_weights(self, data: pd.DataFrame, trading_days: pd.Series, **kwargs) -> pd.DataFrame:
         # calculate asset weights by base strategy

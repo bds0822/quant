@@ -105,17 +105,12 @@ if __name__ == "__main__":
     k_baa = BAA("K_BAA",
                 tickers_canary, [QQQ], [TLT_H, IEF, TIP, LQD, BIL, DBC_H],  # need K-IEF_H and K-DBC
                 n_risk=n_risk_g4, n_safe=n_safe)
-    k_baa_psa = Alternatives("K_BAA_PSA",
-                             k_baa,
-                             alternatives={
-                                 QQQ: TIGER_NASDAQ_100,     # KODEX_NASDAQ_100
-                                 TLT_H: RISE_US_BOND_F_H,   # ACE_US_BOND_H
-                                 IEF: TIGER_US_NOTE_F,      # KODEX_US_NOTE_F
-                                 TIP: TIP,                  # KODEX_TIP
-                                 LQD: PLUS_LQD,             # KODEX_LQD
-                                 BIL: TIGER_US_BIL,         # KODEX_US_SOFR_BIL
-                                 DBC_H: TIGER_OIL_F_H,
-                             })
+    k_baa_psa = BAA("K_BAA_PSA",
+                    tickers_canary,
+                    [KODEX_NASDAQ_100],
+                    [ACE_US_BOND_H, KODEX_US_NOTE_F, KODEX_TIP, KODEX_LQD, KODEX_US_SOFR_BIL, TIGER_OIL_F_H],
+                    ticker_bill=KODEX_US_SOFR_BIL,
+                    n_risk=n_risk_g4, n_safe=n_safe)
 
     # haa = HAA("HAA",
     #           [TIP], [SPY, IWM, EFA, EEM, VNQ, DBC, TLT, IEF], [IEF, BIL],
@@ -126,19 +121,12 @@ if __name__ == "__main__":
     k_haa = HAA("K_HAA",
                 [TIP, SPY], [SPY, QQQ, IYR_H, DBC_H, TLT_H, IEF, GLD], [IEF, BIL, LQD],
                 n_risk=4, n_safe=1)
-    k_haa_psa = Alternatives("K_HAA_PSA",
-                             k_haa,
-                             alternatives={
-                                 SPY: TIGER_SNP_500,        # KODEX_SNP_500
-                                 QQQ: TIGER_NASDAQ_100,     # KODEX_NASDAQ_100
-                                 IYR_H: KODEX_IYR_H,
-                                 DBC_H: TIGER_OIL_F_H,
-                                 TLT_H: RISE_US_BOND_F_H,   # ACE_US_BOND_H
-                                 GLD: ACE_GLD,
-                                 IEF: TIGER_US_NOTE_F,      # KODEX_US_NOTE_F
-                                 BIL: TIGER_US_BIL,         # KODEX_US_SOFR_BIL
-                                 LQD: PLUS_LQD,             # KODEX_LQD
-                             })
+    k_haa_psa = HAA("K_HAA_PSA",
+                    [TIP, SPY],
+                    [KODEX_SNP_500, KODEX_NASDAQ_100, KODEX_IYR_H, TIGER_OIL_F_H, ACE_US_BOND_H, KODEX_US_NOTE_F, ACE_GLD],
+                    [KODEX_US_NOTE_F, KODEX_US_SOFR_BIL, KODEX_LQD],
+                    ticker_bil=KODEX_US_SOFR_BIL,
+                    n_risk=4, n_safe=1)
 
     all_weather = SAA("ALL_WEATHER",
                       [SPY, TLT, IEF, GLD, DBC],
