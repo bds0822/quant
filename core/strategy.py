@@ -21,7 +21,7 @@ class Strategy(abc.ABC):
     def __str__(self):
         return self.name
 
-    def analyze(self, trading_day="end", trading_price="Close", start=None, end=None, in_krw=True,
+    def analyze(self, trading_day="end", trading_price="Close", start=None, end=None, in_krw=True, slippage=0.003,
                 **kwargs) -> pd.DataFrame:
         """
         Get daily profit of the strategy.
@@ -127,21 +127,30 @@ class Strategy(abc.ABC):
         data_trading = data.loc[start:, tickers_trading]
         if in_krw:
             data_trading = data_trading.apply(lambda x: x * data[KRW] if x.name.currency == "USD" else x).dropna()
+        is_trading_day = data_trading.apply(lambda x: x.name in trading_day, axis=1)
         full_day = data_trading.index
         asset_weights_at_trading_day = pd.DataFrame(data=asset_weights, index=full_day).fillna(method='ffill')
 
         change = data_trading.pct_change().fillna(0)
         change_cum = (1 + change).cumprod()
-        change_cum_at_trading_day = pd.DataFrame(data=change_cum.loc[asset_weights.index], index=full_day)\
+        change_cum_at_trading_day = pd.DataFrame(data=change_cum.loc[trading_day], index=full_day)\
             .fillna(method='ffill').fillna(1)
         change_cum_from_trading_day = change_cum / change_cum_at_trading_day
+
         asset_weights_daily = (asset_weights_at_trading_day * change_cum_from_trading_day)\
             .apply(lambda x: x/x.sum(), axis=1)     # normalize
+        asset_returned_daily = (asset_weights_daily.shift(1) * (1 + change)) \
+            .apply(lambda x: x/x.sum(), axis=1)     # normalize
+        asset_changed_daily = (asset_weights_daily - asset_returned_daily)\
+            .apply(lambda x: x * is_trading_day)\
+            .apply(np.abs)
 
-        total_return = (1 + (asset_weights_daily.shift(1) * change).sum(axis=1)).cumprod()
+        slippage = 0.003
+        slippage_daily = asset_changed_daily.sum(axis=1) * slippage
+        total_return = (1 + (asset_weights_daily.shift(1) * change).sum(axis=1) - slippage_daily).cumprod()
         profit = asset_weights_daily.apply(lambda x: x * total_return)
         profit["total_return"] = total_return
-        profit["is_trading_day"] = profit.apply(lambda x: x.name in asset_weights.index, axis=1)
+        profit["is_trading_day"] = is_trading_day
         return profit
 
 

@@ -9,7 +9,7 @@ from core.ticker import *
 
 
 def analyze_strategies(strategies: List[Strategy],
-                       trading_day="end", trading_price="Close", start=None, end=None, in_krw=True,
+                       trading_day="end", trading_price="Close", start=None, end=None, in_krw=True, slippage=0.003,
                        **kwargs):
     result = {}
     for st in strategies:
@@ -18,6 +18,7 @@ def analyze_strategies(strategies: List[Strategy],
                          start=start,
                          end=end,
                          in_krw=in_krw,
+                         slippage=slippage,
                          **kwargs)
         result[st] = rtn
     return result
@@ -88,6 +89,7 @@ if __name__ == "__main__":
     # end = "2022-06-30"
     end = None
     in_krw = True
+    slippage = 0.003
 
     qqq = SAA("QQQ", [QQQ], [100])
     spy = SAA("SPY", [SPY], [100])
@@ -178,8 +180,9 @@ if __name__ == "__main__":
                                 trading_day=trading_day,
                                 start=start,
                                 end=end,
-                                in_krw=in_krw)
-    print_result(result, history=True)
+                                in_krw=in_krw,
+                                slippage=slippage)
+    print_result(result, history=False)
 
     targets = [
         (qqq, spy),
@@ -188,11 +191,14 @@ if __name__ == "__main__":
         (baa_g4, spy),
         (baa_g12, spy),
         (baa_g4, baa_g12),
+        (k_baa_g4, baa_g4),
+        (k_baa, spy),
         (k_baa, baa_g4),
-        (k_baa_psa, spy),
+        (k_baa, k_baa_g4),
         (k_baa_psa, k_baa),
 
         (haa, baa_g4),
+        (k_haa, spy),
         (k_haa, haa),
         (k_haa, k_baa),
         (k_haa_psa, k_haa),
